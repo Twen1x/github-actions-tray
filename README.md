@@ -1,5 +1,7 @@
 # GitHub Actions Tray
 
+**English** | [Русский](README.ru.md)
+
 A GitHub Actions status indicator for Windows: a system tray icon plus a compact
 overlay next to the taskbar. Tracks up to **4 workflows** at once and shows their
 state in real time without opening a browser.
