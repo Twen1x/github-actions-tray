@@ -1,0 +1,10 @@
+{
+  "github_token": "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "poll_interval_seconds": 10,
+  "language": "ru",
+  "actions": [
+    { "label": "DEV",  "owner": "octocat", "repo": "my-repo", "file": "deploy.yml",  "branch": "develop" },
+    { "label": "PROD", "owner": "octocat", "repo": "my-repo", "file": "release.yml", "branch": "main" }
+  ],
+  "overlay": { "enabled": true, "font_color": null, "fields": ["indicator", "label", "sha", "time"] }
+}

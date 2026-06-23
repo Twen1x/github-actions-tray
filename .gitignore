@@ -1,0 +1,32 @@
+# --- Secrets / local config ---
+config.json
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+htmlcov/
+
+# --- Build artifacts ---
+build/work/
+build/*.spec.bak
+dist/
+*.manifest
+release/*
+!release/.gitkeep
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store

@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    name: Lint & import check (Windows)
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff
+
+      - name: Lint (ruff)
+        run: ruff check .
+        continue-on-error: true
+
+      - name: Import smoke test (offscreen Qt)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -c "import main; from app import action_state, config, poller, tray, overlay, taskbar_geometry, theme, i18n, settings_window, autostart; print('imports OK')"
+
+      - name: Compile all sources
+        run: python -m compileall -q main.py app
