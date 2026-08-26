@@ -21,7 +21,19 @@ PAD_R = 10
 PAD_V = 4
 IND_W = 14
 GAP = 8
+COL_GAP = 14
 ROW_MIN_H = 20
+
+# Column-major 2×2 slots — same order as tray icon (tl, bl, tr, br).
+_GRID_SLOTS = ((0, 0), (1, 0), (0, 1), (1, 1))
+
+
+def _grid_dimensions(n: int) -> tuple[int, int]:
+    if n <= 1:
+        return 1, 1
+    if n == 2:
+        return 2, 1
+    return 2, 2
 
 _RT_MINUTE = 60
 _RT_HOUR = 3600
@@ -261,6 +273,47 @@ class TaskbarOverlay(QWidget):
             cols.append((key, int(w)))
         return cols
 
+    def _cell_width(self, cols: list[tuple[str, int]]) -> int:
+        if not cols:
+            return 0
+        return sum(w for _k, w in cols) + GAP * (len(cols) - 1)
+
+    def _paint_action_cell(
+        self,
+        painter: QPainter,
+        st,
+        cols: list[tuple[str, int]],
+        fm,
+        text_color: QColor,
+        left: float,
+        top: float,
+        row_h: float,
+    ) -> None:
+        indicator_d = max(5.0, min(row_h * 0.55, 12.0))
+        cy = top + row_h / 2.0
+        x = left
+
+        for key, w in cols:
+            if key == "indicator":
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QColor(*st.color()))
+                painter.drawEllipse(
+                    QRectF(x + (w - indicator_d) / 2.0,
+                           cy - indicator_d / 2.0,
+                           indicator_d, indicator_d)
+                )
+            else:
+                text = self._field_text(st, key)
+                if key in ("author", "message"):
+                    text = fm.elidedText(text, Qt.ElideRight, w)
+                painter.setPen(text_color)
+                painter.drawText(
+                    QRectF(x, top, w, row_h),
+                    int(Qt.AlignVCenter | Qt.AlignLeft),
+                    text,
+                )
+            x += w + GAP
+
     def _paint_content(self, painter: QPainter, rect, text_color: QColor) -> None:
         n = len(self.states)
         if n == 0:
@@ -274,37 +327,17 @@ class TaskbarOverlay(QWidget):
         fm = QFontMetrics(font)
 
         cols = self._field_columns(fm)
-
-        inner_top = rect.top() + PAD_V
-        inner_h = rect.height() - 2 * PAD_V
-        row_h = inner_h / n if n else inner_h
-        indicator_d = max(5.0, min(row_h * 0.55, 12.0))
+        grid_rows, grid_cols = _grid_dimensions(n)
+        row_h = max(ROW_MIN_H, FONT_PX + 8)
+        cell_w = self._cell_width(cols)
 
         for i, st in enumerate(self.states):
-            top = inner_top + i * row_h
-            cy = top + row_h / 2.0
-            x = rect.left() + PAD_L
-
-            for key, w in cols:
-                if key == "indicator":
-                    painter.setPen(Qt.NoPen)
-                    painter.setBrush(QColor(*st.color()))
-                    painter.drawEllipse(
-                        QRectF(x + (w - indicator_d) / 2.0,
-                               cy - indicator_d / 2.0,
-                               indicator_d, indicator_d)
-                    )
-                else:
-                    text = self._field_text(st, key)
-                    if key in ("author", "message"):
-                        text = fm.elidedText(text, Qt.ElideRight, w)
-                    painter.setPen(text_color)
-                    painter.drawText(
-                        QRectF(x, top, w, row_h),
-                        int(Qt.AlignVCenter | Qt.AlignLeft),
-                        text,
-                    )
-                x += w + GAP
+            row, col = _GRID_SLOTS[i]
+            left = rect.left() + PAD_L + col * (cell_w + COL_GAP)
+            top = rect.top() + PAD_V + row * row_h
+            self._paint_action_cell(
+                painter, st, cols, fm, text_color, left, top, row_h
+            )
 
     def reposition(self, geom) -> None:
         overlay_cfg = self.cfg.overlay
@@ -378,11 +411,13 @@ class TaskbarOverlay(QWidget):
         font.setPixelSize(FONT_PX)
         fm = QFontMetrics(font)
         cols = self._field_columns(fm)
+        grid_rows, grid_cols = _grid_dimensions(n)
+        cell_w = self._cell_width(cols)
         width = PAD_L + PAD_R
-        if cols:
-            width += sum(w for _k, w in cols) + GAP * (len(cols) - 1)
+        if cell_w:
+            width += grid_cols * cell_w + COL_GAP * max(0, grid_cols - 1)
         row_h = max(ROW_MIN_H, FONT_PX + 8)
-        height = n * row_h + 2 * PAD_V
+        height = grid_rows * row_h + 2 * PAD_V
         return Size(int(width), int(height))
 
     def _embed_and_place(self, size: Size) -> bool:

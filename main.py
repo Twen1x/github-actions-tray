@@ -200,14 +200,27 @@ class TrayApplication:
                 logger.debug("could not open %s in browser", url)
 
     def _open_settings(self) -> None:
+        from PySide6.QtCore import Qt
+
         sw = self.settings_window
         if sw is None:
             return
-        if not sw.isVisible():
-            sw.load_from(self.cfg)
-            sw.show()
+        sw.load_from(self.cfg)
+        sw.setWindowState(
+            sw.windowState() & ~Qt.WindowState.WindowMinimized
+            | Qt.WindowState.WindowActive
+        )
+        sw.showNormal()
         sw.raise_()
         sw.activateWindow()
+        try:
+            import ctypes
+
+            hwnd = int(sw.winId())
+            if hwnd:
+                ctypes.windll.user32.SetForegroundWindow(hwnd)
+        except Exception:
+            logger.debug("SetForegroundWindow failed", exc_info=True)
 
     def _quit(self) -> None:
         self.pulse_timer.stop()
