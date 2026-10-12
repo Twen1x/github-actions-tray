@@ -186,18 +186,13 @@ class TrayApplication:
         self.overlay.update_content(self.states)
         self.overlay.reposition(self.geom)
 
-    def _open_actions(self) -> None:
-        opened: set[str] = set()
-        for st in self.states:
-            cfg = st.cfg
-            url = f"https://github.com/{cfg.owner}/{cfg.repo}/actions"
-            if url in opened or not cfg.owner or not cfg.repo:
-                continue
-            opened.add(url)
-            try:
-                webbrowser.open(url)
-            except Exception:
-                logger.debug("could not open %s in browser", url)
+    def _open_actions(self, url: str) -> None:
+        if not url:
+            return
+        try:
+            webbrowser.open(url)
+        except Exception:
+            logger.debug("could not open %s in browser", url)
 
     def _open_settings(self) -> None:
         from PySide6.QtCore import Qt
@@ -290,8 +285,35 @@ class TrayApplication:
         self.start()
         return self.qt_app.exec()
 
+def setup_logging() -> str:
+    import os
+    from logging.handlers import RotatingFileHandler
+
+    from app.config import _config_dir
+
+    log_dir = _config_dir()
+    os.makedirs(log_dir, exist_ok=True)
+    path = os.path.join(log_dir, "tray.log")
+
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+    file_handler = RotatingFileHandler(
+        path, maxBytes=512_000, backupCount=2, encoding="utf-8"
+    )
+    file_handler.setFormatter(formatter)
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.handlers.clear()
+    root.addHandler(file_handler)
+    root.addHandler(stream_handler)
+    return path
+
+
 def main() -> int:
-    logging.basicConfig(level=logging.INFO)
+    log_path = setup_logging()
+    logger.info("лог: %s", log_path)
 
     import faulthandler
 

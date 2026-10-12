@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import QObject, Qt, QThread, QUrl, Signal, Slot
 from PySide6.QtGui import QColor, QDesktopServices
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -27,11 +27,29 @@ from app.config import validate as validate_config
 from app import autostart
 from app.i18n import DEFAULT_FIELDS, FIELD_KEYS, field_label, normalize_lang, tr
 from app.config import ActionConfig, AppConfig, OverlayConfig
+from app.poller import Poller
 
 MIN_ACTIONS = 1
 MAX_ACTIONS = 4
 _ACTION_FIELDS = ("label", "owner", "repo", "file", "branch")
 GITHUB_TOKENS_URL = "https://github.com/settings/tokens"
+
+
+class _TokenCheckWorker(QObject):
+
+    finished = Signal(object)
+
+    def __init__(self, cfg: AppConfig) -> None:
+        super().__init__()
+        self._cfg = cfg
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            result = Poller(self._cfg, []).check(self._cfg)
+        except Exception as exc:
+            result = [(False, str(exc)[:200])]
+        self.finished.emit(result)
 
 class _ActionRow(QGroupBox):
 
@@ -125,10 +143,15 @@ class SettingsWindow(QWidget):
 
         self.token_group = QGroupBox(self)
         tg = QVBoxLayout(self.token_group)
+        token_row = QHBoxLayout()
         self.token_edit = QLineEdit(self.token_group)
         self.token_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self.token_edit.setPlaceholderText("github_token")
-        tg.addWidget(self.token_edit)
+        token_row.addWidget(self.token_edit)
+        self.check_button = QPushButton(self.token_group)
+        self.check_button.clicked.connect(self._check)
+        token_row.addWidget(self.check_button)
+        tg.addLayout(token_row)
         self.token_help = QLabel(self.token_group)
         self.token_help.setWordWrap(True)
         self.token_help.setOpenExternalLinks(False)
@@ -208,6 +231,7 @@ class SettingsWindow(QWidget):
         self.color_button.setText(tr("choose_color", lang))
         self.enabled_check.setText(tr("show_overlay", lang))
         self.autostart_check.setText(tr("autostart", lang))
+        self.check_button.setText(tr("check", lang))
         self.save_button.setText(tr("save", lang))
         self.actions_hint.setText(tr("actions_hint", lang))
         for row in self._action_rows:
@@ -405,6 +429,33 @@ class SettingsWindow(QWidget):
 
     def validate(self) -> list[str]:
         return list(validate_config(self.collect()))
+
+    def _check(self) -> None:
+        if getattr(self, "_check_thread", None) is not None and self._check_thread.isRunning():
+            return
+        cfg = self.collect()
+        errors = list(validate_config(cfg))
+        if errors:
+            self._show_errors(errors)
+            return
+        self.check_button.setEnabled(False)
+        self.check_button.setText(tr("check_busy", self._lang))
+        self._check_thread = QThread(self)
+        self._check_worker = _TokenCheckWorker(cfg)
+        self._check_worker.moveToThread(self._check_thread)
+        self._check_thread.started.connect(self._check_worker.run)
+        self._check_worker.finished.connect(self._on_check_finished)
+        self._check_worker.finished.connect(self._check_thread.quit)
+        self._check_thread.finished.connect(self._check_worker.deleteLater)
+        self._check_thread.start()
+
+    def _on_check_finished(self, result) -> None:
+        self.check_button.setEnabled(True)
+        self.check_button.setText(tr("check", self._lang))
+        lines = [text for _ok, text in result]
+        failed = any(not ok for ok, _text in result)
+        box = QMessageBox.warning if failed else QMessageBox.information
+        box(self, tr("check_title", self._lang), "\n".join(lines) or "—")
 
     def save(self) -> bool:
         cfg = self.collect()

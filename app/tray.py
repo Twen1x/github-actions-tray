@@ -125,8 +125,15 @@ def human_status(state, lang: str = "ru") -> str:
 
 
 def actions_url(state) -> str:
+    from urllib.parse import quote
+
     cfg = state.cfg
-    return f"https://github.com/{cfg.owner}/{cfg.repo}/actions"
+    owner = (cfg.owner or "").strip()
+    repo = (cfg.repo or "").strip()
+    file = (cfg.file or "").strip()
+    if file:
+        return f"https://github.com/{owner}/{repo}/actions/workflows/{quote(file)}"
+    return f"https://github.com/{owner}/{repo}/actions"
 
 
 class TrayIcon:
@@ -137,7 +144,7 @@ class TrayIcon:
         renderer: IconRenderer | None = None,
         *,
         lang: str = "ru",
-        on_open_actions: Callable[[], None] | None = None,
+        on_open_actions: Callable[[str], None] | None = None,
         on_settings: Callable[[], None] | None = None,
         on_refresh: Callable[[], None] | None = None,
         on_quit: Callable[[], None] | None = None,
@@ -165,6 +172,7 @@ class TrayIcon:
         pixmap = self.renderer.render(states, pulse_on=pulse_on)
         self._tray.setIcon(QIcon(pixmap))
         self._tray.setToolTip(self._tooltip())
+        self._sync_open_menu()
 
     def show(self) -> None:
         self._tray.setVisible(True)
@@ -180,23 +188,28 @@ class TrayIcon:
 
     def set_language(self, lang: str) -> None:
         self._lang = normalize_lang(lang)
-        self.action_open.setText(tr("tray_open_actions", self._lang))
+        self.open_menu.setTitle(tr("tray_open_actions", self._lang))
         self.action_settings.setText(tr("tray_settings", self._lang))
         self.action_refresh.setText(tr("tray_refresh", self._lang))
+        self.action_log.setText(tr("tray_log", self._lang))
         self.action_quit.setText(tr("tray_quit", self._lang))
         self._tray.setToolTip(self._tooltip())
 
     def _build_menu(self) -> None:
         menu = QMenu()
 
-        self.action_open = menu.addAction(tr("tray_open_actions", self._lang))
-        self.action_open.triggered.connect(self._handle_open_actions)
+        self.open_menu = menu.addMenu(tr("tray_open_actions", self._lang))
+        self._open_entries: list[tuple[str, str]] = []
+        self._sync_open_menu()
 
         self.action_settings = menu.addAction(tr("tray_settings", self._lang))
         self.action_settings.triggered.connect(self._handle_settings)
 
         self.action_refresh = menu.addAction(tr("tray_refresh", self._lang))
         self.action_refresh.triggered.connect(self._handle_refresh)
+
+        self.action_log = menu.addAction(tr("tray_log", self._lang))
+        self.action_log.triggered.connect(self._handle_log)
 
         menu.addSeparator()
 
@@ -206,11 +219,34 @@ class TrayIcon:
         self._menu = menu
         self._tray.setContextMenu(menu)
 
-    def _handle_open_actions(self, *_) -> None:
+    def _sync_open_menu(self) -> None:
+        entries: list[tuple[str, str]] = []
+        for st in self.states:
+            cfg = getattr(st, "cfg", None)
+            if cfg is None:
+                continue
+            owner = (getattr(cfg, "owner", None) or "").strip()
+            repo = (getattr(cfg, "repo", None) or "").strip()
+            if not owner or not repo:
+                continue
+            label = (getattr(st, "label", None) or "").strip() or f"{owner}/{repo}"
+            entries.append((label, actions_url(st)))
+        if entries == self._open_entries:
+            return
+        self._open_entries = entries
+        self.open_menu.clear()
+        for label, url in entries:
+            action = self.open_menu.addAction(label)
+            action.triggered.connect(lambda *_args, u=url: self._open_url(u))
+
+    def _open_url(self, url: str) -> None:
         if self.on_open_actions is not None:
-            self.on_open_actions()
-        elif self.states:
-            webbrowser.open(actions_url(self.states[0]))
+            self.on_open_actions(url)
+            return
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
 
     def _handle_settings(self, *_) -> None:
         if self.on_settings is not None:
@@ -219,6 +255,19 @@ class TrayIcon:
     def _handle_refresh(self, *_) -> None:
         if self.on_refresh is not None:
             self.on_refresh()
+
+    def _handle_log(self, *_) -> None:
+        import os
+
+        from app.config import _config_dir
+
+        folder = _config_dir()
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, "tray.log")
+        if not os.path.exists(path):
+            with open(path, "a", encoding="utf-8"):
+                pass
+        os.startfile(path)
 
     def _handle_quit(self, *_) -> None:
         if self.on_quit is not None:

@@ -25,6 +25,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "en": "Run at Windows startup",
     },
     "save": {"ru": "Сохранить", "en": "Save"},
+    "check": {"ru": "Проверить", "en": "Check"},
+    "check_busy": {"ru": "Проверка…", "en": "Checking…"},
+    "check_title": {"ru": "Проверка", "en": "Check"},
     "display_group": {
         "ru": "Что показывать (перетащите для порядка)",
         "en": "What to show (drag to reorder)",
@@ -44,6 +47,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     },
     "tray_settings": {"ru": "Настройки", "en": "Settings"},
     "tray_refresh": {"ru": "Обновить сейчас", "en": "Refresh now"},
+    "tray_log": {"ru": "Лог ошибок", "en": "Error log"},
     "tray_quit": {"ru": "Выход", "en": "Quit"},
     "err_config_title": {"ru": "Ошибки конфигурации", "en": "Configuration errors"},
     "err_open_link_title": {"ru": "Ошибка", "en": "Error"},
