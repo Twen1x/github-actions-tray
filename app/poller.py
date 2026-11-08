@@ -116,7 +116,7 @@ class Poller:
             st.has_data = True
             st.fail_streak = 0
             self._logged_errors.pop(st.label, None)
-        except requests.RequestException as exc:
+        except (requests.RequestException, ValueError, TypeError, AttributeError, IndexError) as exc:
             st.error = str(exc)[:40]
             st.fail_streak += 1
             self._log_api_error(st, getattr(exc, "response", None))
@@ -164,7 +164,11 @@ class Poller:
         return lines
 
     def poll_once(self) -> None:
-        for st in self.states:
+        from PySide6.QtCore import QThread
+
+        for st in list(self.states):
+            if QThread.currentThread().isInterruptionRequested():
+                break
             self.fetch_state(st)
 
     def reconfigure(self, cfg: AppConfig) -> None:

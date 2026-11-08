@@ -169,8 +169,11 @@ class TrayIcon:
 
     def update_icon(self, states: list, pulse_on: bool = True) -> None:
         self.states = states
-        pixmap = self.renderer.render(states, pulse_on=pulse_on)
-        self._tray.setIcon(QIcon(pixmap))
+        key = tuple((st.color(), st.is_running and not pulse_on) for st in states)
+        if key != getattr(self, "_icon_key", None):
+            pixmap = self.renderer.render(states, pulse_on=pulse_on)
+            self._tray.setIcon(QIcon(pixmap))
+            self._icon_key = key
         self._tray.setToolTip(self._tooltip())
         self._sync_open_menu()
 

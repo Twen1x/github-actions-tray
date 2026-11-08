@@ -483,6 +483,10 @@ class TaskbarOverlay(QWidget):
         self._fullscreen_timer.start()
 
     def _check_fullscreen(self) -> None:
+        if not getattr(self.cfg.overlay, "enabled", True):
+            if self.isVisible():
+                self.hide()
+            return
         try:
             fullscreen = self._foreground_is_fullscreen()
         except Exception:

@@ -64,6 +64,7 @@ class PollWorker(QObject):
     @Slot()
     def start(self) -> None:
         self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
         self._timer.setInterval(self._interval_ms)
         self._timer.timeout.connect(self._tick)
         self._timer.start()
@@ -90,10 +91,15 @@ class PollWorker(QObject):
         except Exception:
             logger.exception("poll_once failed")
         self.polled.emit()
+        if self._timer is not None and not QThread.currentThread().isInterruptionRequested():
+            self._timer.start(self._interval_ms)
 
-class TrayApplication:
+class TrayApplication(QObject):
 
     def __init__(self, qt_app, config_store: ConfigStore | None = None) -> None:
+        super().__init__()
+        self._closing = False
+        self._refresh_pending = False
         self.qt_app = qt_app
         self.qt_app.setQuitOnLastWindowClosed(False)
 
@@ -172,6 +178,9 @@ class TrayApplication:
     def _request_poll(self) -> None:
         from PySide6.QtCore import QMetaObject, Qt
 
+        if self._closing or self._refresh_pending:
+            return
+        self._refresh_pending = True
         QMetaObject.invokeMethod(
             self.poll_worker, "trigger", Qt.ConnectionType.QueuedConnection
         )
@@ -181,7 +190,11 @@ class TrayApplication:
         if any(st.is_running for st in self.states):
             self.tray.update_icon(self.states, pulse_on=self._pulse_on)
 
+    @Slot()
     def _refresh_ui(self) -> None:
+        self._refresh_pending = False
+        if self._closing:
+            return
         self.tray.update_icon(self.states, pulse_on=self._pulse_on)
         self.overlay.update_content(self.states)
         self.overlay.reposition(self.geom)
@@ -218,17 +231,27 @@ class TrayApplication:
             logger.debug("SetForegroundWindow failed", exc_info=True)
 
     def _quit(self) -> None:
+        if self._closing:
+            return
+        self._closing = True
         self.pulse_timer.stop()
-        try:
-            from PySide6.QtCore import QMetaObject, Qt
+        self.tray.hide()
+        self.overlay.hide()
+        self.settings_window.hide()
+        self.poll_thread.requestInterruption()
+        self.poll_thread.quit()
+        self._shutdown_timer = QTimer(self)
+        self._shutdown_timer.setInterval(100)
+        self._shutdown_timer.timeout.connect(self._finish_shutdown)
+        self._shutdown_timer.start()
+        self._finish_shutdown()
 
-            QMetaObject.invokeMethod(
-                self.poll_worker, "stop", Qt.ConnectionType.QueuedConnection
-            )
-            self.poll_thread.quit()
-            self.poll_thread.wait(2000)
-        except Exception:
-            logger.debug("error while stopping poll thread", exc_info=True)
+    @Slot()
+    def _finish_shutdown(self) -> None:
+        check_thread = getattr(self.settings_window, "_check_thread", None)
+        if self.poll_thread.isRunning() or (check_thread is not None and check_thread.isRunning()):
+            return
+        self._shutdown_timer.stop()
         self.qt_app.quit()
 
     def _on_saved(self, new_cfg: AppConfig) -> None:
@@ -336,9 +359,6 @@ def main() -> int:
     qt_app.setWindowIcon(app_icon())
 
     signal.signal(signal.SIGINT, signal.SIG_DFL)
-    _sigint_timer = QTimer()
-    _sigint_timer.start(200)
-    _sigint_timer.timeout.connect(lambda: None)
 
     application = TrayApplication(qt_app)
     return application.run()
